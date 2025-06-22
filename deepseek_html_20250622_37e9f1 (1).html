@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Гол vs Колы</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #0f0f1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: 'Press Start 2P', cursive;
+            color: #fff;
+        }
+        #gameCanvas {
+            border: 4px solid #6e45e2;
+            box-shadow: 0 0 30px #6e45e2;
+            background: #1a1a2e;
+        }
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            font-size: 16px;
+            color: #ff6b6b;
+            text-shadow: 0 0 5px #ff0000;
+        }
+        #startScreen, #winScreen, #shopScreen {
+            position: absolute;
+            text-align: center;
+            background: rgba(26, 26, 46, 0.9);
+            padding: 30px;
+            border-radius: 10px;
+            border: 3px solid #6e45e2;
+            z-index: 100;
+        }
+        #winScreen, #shopScreen {
+            display: none;
+        }
+        h1 {
+            color: #6e45e2;
+            text-shadow: 0 0 10px #9d65ff;
+            font-size: 2em;
+            margin-bottom: 20px;
+        }
+        .win-text {
+            color: #ffd700;
+            font-size: 2em;
+            text-shadow: 0 0 15px #ff0000;
+            margin-bottom: 20px;
+            animation: glow 1s infinite alternate;
+        }
+        @keyframes glow {
+            from { text-shadow: 0 0 10px #ffd700; }
+            to { text-shadow: 0 0 20px #ff0000, 0 0 30px #ff6b6b; }
+        }
+        button {
+            background: #6e45e2;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 0.9em;
+            font-family: 'Press Start 2P', cursive;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 0 10px #9d65ff;
+            margin: 5px;
+        }
+        button:hover {
+            background: #9d65ff;
+            transform: scale(1.05);
+        }
+        button:disabled {
+            background: #555;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .shop-item {
+            display: inline-block;
+            margin: 10px;
+            padding: 10px;
+            border: 2px solid #6e45e2;
+            border-radius: 5px;
+            background: rgba(30, 30, 50, 0.7);
+        }
+        .shop-item img {
+            width: 80px;
+            height: 80px;
+            object-fit: cover;
+            border: 2px solid #00a8ff;
+            border-radius: 5px;
+        }
+        .shop-item button {
+            margin-top: 5px;
+            width: 100%;
+        }
+        .currency {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 16px;
+            color: #ffd700;
+            text-shadow: 0 0 5px #ff0000;
+        }
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+    </style>
+</head>
+<body>
+    <div id="ui">
+        Очки: <span id="score">0</span> | 
+        Рекорд: <span id="highScore">0</span>
+    </div>
+    <div class="currency">
+        Рублей: <span id="rubles">0</span>
+    </div>
+
+    <div id="startScreen">
+        <h1>ГОЛ vs КОЛЫ</h1>
+        <button id="startButton">СТАРТ (ПРОБЕЛ)</button>
+        <button id="shopButton">МАГАЗИН</button>
+        <p>Прыгай: ПРОБЕЛ или КЛИК</p>
+    </div>
+
+    <div id="winScreen">
+        <div class="win-text">ГОЙДА ZOV</div>
+        <p>+1 рубль за победу!</p>
+        <button id="winRestartButton">Играть снова</button>
+        <button id="winShopButton">Магазин</button>
+    </div>
+
+    <div id="shopScreen">
+        <h1>МАГАЗИН СКИНОВ</h1>
+        <div id="shopItems" class="shop-items"></div>
+        <button id="backButton">Назад</button>
+    </div>
+
+    <canvas id="gameCanvas" width="800" height="400"></canvas>
+
+    <script>
+        // Инициализация
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const startScreen = document.getElementById('startScreen');
+        const winScreen = document.getElementById('winScreen');
+        const shopScreen = document.getElementById('shopScreen');
+        const scoreElement = document.getElementById('score');
+        const highScoreElement = document.getElementById('highScore');
+        const rublesElement = document.getElementById('rubles');
+        const startButton = document.getElementById('startButton');
+        const shopButton = document.getElementById('shopButton');
+        const winRestartButton = document.getElementById('winRestartButton');
+        const winShopButton = document.getElementById('winShopButton');
+        const backButton = document.getElementById('backButton');
+        const shopItemsContainer = document.getElementById('shopItems');
+
+        // Настройки
+        const GRAVITY = 0.5;
+        const JUMP_FORCE = -12;
+        const GAME_SPEED_START = 5;
+        const GAME_SPEED_INCREMENT = 0.003;
+        const WIN_SCORE = 20;
+        
+        // Магазин скинов (переименованные скины)
+        const skins = [
+            { 
+                id: 0,
+                name: "Медведь", 
+                price: 0,
+                image: "bear.jpg",
+                unlocked: true 
+            },
+            { 
+                id: 1,
+                name: "Флаг России", 
+                price: 2,
+                image: "skin1.jpg",
+                unlocked: false 
+            },
+            { 
+                id: 2,
+                name: "Охлобыстин", 
+                price: 3,
+                image: "skin2.jpg",
+                unlocked: false 
+            },
+            { 
+                id: 3,
+                name: "Иван Грозный", 
+                price: 4,
+                image: "skin3.jpg",
+                unlocked: false 
+            },
+            { 
+                id: 4,
+                name: "Орешник", 
+                price: 5,
+                image: "skin4.jpg",
+                unlocked: false 
+            }
+        ];
+        
+        // Переменные
+        let gameSpeed = GAME_SPEED_START;
+        let score = 0;
+        let rubles = localStorage.getItem('rubles') ? parseInt(localStorage.getItem('rubles')) : 0;
+        let highScore = localStorage.getItem('highScore') ? parseInt(localStorage.getItem('highScore')) : 0;
+        let gameStarted = false;
+        let gameWon = false;
+        let animationId;
+        let currentSkin = 0;
+        
+        // Загрузка сохранённых скинов
+        function loadUnlockedSkins() {
+            const unlockedSkins = localStorage.getItem('unlockedSkins');
+            if (unlockedSkins) {
+                const parsed = JSON.parse(unlockedSkins);
+                skins.forEach(skin => {
+                    if (parsed.includes(skin.id)) {
+                        skin.unlocked = true;
+                    }
+                });
+            }
+        }
+        
+        // Инициализация магазина
+        function initShop() {
+            shopItemsContainer.innerHTML = '';
+            skins.forEach((skin, index) => {
+                const item = document.createElement('div');
+                item.className = 'shop-item';
+                
+                const img = document.createElement('img');
+                img.src = skin.image;
+                img.alt = skin.name;
+                
+                const name = document.createElement('p');
+                name.textContent = skin.name;
+                
+                const price = document.createElement('p');
+                price.textContent = `Цена: ${skin.price} руб.`;
+                price.style.color = '#ffd700';
+                
+                const buyButton = document.createElement('button');
+                buyButton.textContent = skin.unlocked ? 'Выбрать' : 'Купить';
+                buyButton.disabled = !skin.unlocked && rubles < skin.price;
+                
+                buyButton.addEventListener('click', () => {
+                    if (skin.unlocked) {
+                        currentSkin = skin.id;
+                        updatePlayerImage();
+                    } else if (rubles >= skin.price) {
+                        rubles -= skin.price;
+                        skin.unlocked = true;
+                        saveGameData();
+                        initShop();
+                        updateRublesDisplay();
+                    }
+                });
+                
+                item.appendChild(img);
+                item.appendChild(name);
+                item.appendChild(price);
+                item.appendChild(buyButton);
+                
+                shopItemsContainer.appendChild(item);
+            });
+        }
+        
+        // Сохранение данных игры
+        function saveGameData() {
+            localStorage.setItem('highScore', highScore);
+            localStorage.setItem('rubles', rubles);
+            
+            const unlockedSkins = skins
+                .filter(skin => skin.unlocked)
+                .map(skin => skin.id);
+            localStorage.setItem('unlockedSkins', JSON.stringify(unlockedSkins));
+        }
+        
+        // Обновление отображения рублей
+        function updateRublesDisplay() {
+            rublesElement.textContent = rubles;
+        }
+        
+        // Загрузка изображения игрока
+        const playerImage = new Image();
+        function updatePlayerImage() {
+            playerImage.src = skins[currentSkin].image;
+        }
+        
+        // Игрок
+        const player = {
+            x: 100,
+            y: canvas.height - 100,
+            width: 60,
+            height: 60,
+            velocityY: 0,
+            jumping: false,
+            update() {
+                if (gameWon) return;
+                
+                this.velocityY += GRAVITY;
+                this.y += this.velocityY;
+                
+                if (this.y > canvas.height - this.height) {
+                    this.y = canvas.height - this.height;
+                    this.velocityY = 0;
+                    this.jumping = false;
+                }
+            },
+            draw() {
+                if (playerImage.complete && playerImage.src) {
+                    ctx.drawImage(playerImage, this.x, this.y, this.width, this.height);
+                } else {
+                    ctx.fillStyle = '#ff6b6b';
+                    ctx.fillRect(this.x, this.y, this.width, this.height);
+                }
+                
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                ctx.fillRect(this.x, canvas.height - 10, this.width, 5);
+            },
+            jump() {
+                if (!this.jumping && !gameWon) {
+                    this.velocityY = JUMP_FORCE;
+                    this.jumping = true;
+                }
+            }
+        };
+        
+        let obstacles = [];
+        let particles = [];
+        
+        // Препятствия
+        class Obstacle {
+            constructor() {
+                this.width = 30;
+                this.height = 40 + Math.random() * 60;
+                this.x = canvas.width;
+                this.y = canvas.height - this.height;
+                this.color = '#00a8ff';
+                this.passed = false;
+            }
+            
+            update() {
+                if (gameWon) return;
+                this.x -= gameSpeed;
+            }
+            
+            draw() {
+                ctx.fillStyle = this.color;
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+                
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y);
+                ctx.lineTo(this.x + this.width/2, this.y - 20);
+                ctx.lineTo(this.x + this.width, this.y);
+                ctx.closePath();
+                ctx.fill();
+                
+                ctx.shadowColor = this.color;
+                ctx.shadowBlur = 15;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            }
+        }
+        
+        // Частицы
+        class Particle {
+            constructor(x, y, color) {
+                this.x = x;
+                this.y = y;
+                this.size = Math.random() * 5 + 2;
+                this.color = color;
+                this.velocityX = Math.random() * 6 - 3;
+                this.velocityY = Math.random() * 6 - 3;
+                this.life = 30;
+            }
+            
+            update() {
+                this.x += this.velocityX;
+                this.y += this.velocityY;
+                this.life--;
+            }
+            
+            draw() {
+                ctx.fillStyle = this.color;
+                ctx.globalAlpha = this.life / 30;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1;
+            }
+        }
+        
+        // Функции игры
+        function startGame() {
+            gameStarted = true;
+            gameWon = false;
+            startScreen.style.display = 'none';
+            winScreen.style.display = 'none';
+            shopScreen.style.display = 'none';
+            score = 0;
+            gameSpeed = GAME_SPEED_START;
+            obstacles = [];
+            particles = [];
+            player.y = canvas.height - 100;
+            player.velocityY = 0;
+            highScoreElement.textContent = highScore;
+            scoreElement.textContent = '0';
+            gameLoop();
+        }
+        
+        function endGame() {
+            gameStarted = false;
+            cancelAnimationFrame(animationId);
+            
+            for (let i = 0; i < 50; i++) {
+                particles.push(new Particle(
+                    player.x + player.width/2,
+                    player.y + player.height/2,
+                    '#ff6b6b'
+                ));
+            }
+            
+            if (score > highScore) {
+                highScore = score;
+                saveGameData();
+                highScoreElement.textContent = highScore;
+            }
+            
+            startScreen.style.display = 'block';
+        }
+        
+        function winGame() {
+            gameWon = true;
+            rubles++;
+            saveGameData();
+            updateRublesDisplay();
+            winScreen.style.display = 'block';
+            
+            for (let i = 0; i < 100; i++) {
+                particles.push(new Particle(
+                    player.x + player.width/2,
+                    player.y + player.height/2,
+                    `hsl(${Math.random() * 360}, 100%, 50%)`
+                ));
+            }
+        }
+        
+        function spawnObstacle() {
+            if (gameWon) return;
+            if (obstacles.length === 0 || obstacles[obstacles.length - 1].x < canvas.width - 500) {
+                obstacles.push(new Obstacle());
+            }
+        }
+        
+        function checkCollision() {
+            if (gameWon) return false;
+            
+            for (let obstacle of obstacles) {
+                if (
+                    player.x < obstacle.x + obstacle.width &&
+                    player.x + player.width > obstacle.x &&
+                    player.y < obstacle.y + obstacle.height &&
+                    player.y + player.height > obstacle.y
+                ) {
+                    return true;
+                }
+                
+                if (!obstacle.passed && player.x > obstacle.x + obstacle.width) {
+                    obstacle.passed = true;
+                    score++;
+                    scoreElement.textContent = score;
+                    
+                    if (score >= WIN_SCORE) {
+                        winGame();
+                        return false;
+                    }
+                }
+            }
+            return false;
+        }
+        
+        function gameLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Фон
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Сетка
+            ctx.strokeStyle = 'rgba(110, 69, 226, 0.2)';
+            ctx.lineWidth = 1;
+            for (let x = 0; x < canvas.width; x += 40) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+            
+            // Игрок
+            player.update();
+            player.draw();
+            
+            // Препятствия
+            spawnObstacle();
+            
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                obstacles[i].update();
+                obstacles[i].draw();
+                
+                if (obstacles[i].x + obstacles[i].width < 0) {
+                    obstacles.splice(i, 1);
+                }
+            }
+            
+            // Частицы
+            for (let i = particles.length - 1; i >= 0; i--) {
+                particles[i].update();
+                particles[i].draw();
+                
+                if (particles[i].life <= 0) {
+                    particles.splice(i, 1);
+                }
+            }
+            
+            if (!gameWon) {
+                gameSpeed += GAME_SPEED_INCREMENT;
+            }
+            
+            if (checkCollision()) {
+                endGame();
+                return;
+            }
+            
+            animationId = requestAnimationFrame(gameLoop);
+        }
+        
+        // Управление интерфейсом
+        function showShop() {
+            startScreen.style.display = 'none';
+            winScreen.style.display = 'none';
+            shopScreen.style.display = 'block';
+            initShop();
+        }
+        
+        function showMainMenu() {
+            startScreen.style.display = 'block';
+            winScreen.style.display = 'none';
+            shopScreen.style.display = 'none';
+        }
+        
+        // Обработчики событий
+        function handleKeyDown(e) {
+            if ((e.code === 'Space' || e.key === ' ') && !gameStarted && startScreen.style.display === 'block') {
+                startGame();
+            } else if (e.code === 'Space' || e.key === ' ') {
+                player.jump();
+            }
+        }
+        
+        canvas.addEventListener('click', () => {
+            if (!gameStarted && startScreen.style.display === 'block') {
+                startGame();
+            } else if (gameStarted) {
+                player.jump();
+            }
+        });
+        
+        startButton.addEventListener('click', startGame);
+        shopButton.addEventListener('click', showShop);
+        winRestartButton.addEventListener('click', startGame);
+        winShopButton.addEventListener('click', showShop);
+        backButton.addEventListener('click', showMainMenu);
+        document.addEventListener('keydown', handleKeyDown);
+        
+        // Инициализация игры
+        loadUnlockedSkins();
+        updatePlayerImage();
+        updateRublesDisplay();
+        highScoreElement.textContent = highScore;
+    </script>
+</body>
+</html>
